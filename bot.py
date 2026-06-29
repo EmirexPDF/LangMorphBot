@@ -3,7 +3,6 @@ import logging
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
-from googletrans import Translator
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -11,19 +10,17 @@ load_dotenv()
 
 # Enable logging
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-# Initialize translator
-translator = Translator()
 
 # Bot token from environment variable
 TOKEN = os.environ.get("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("BOT_TOKEN environment variable not set!")
 
-# Port for webhook (Railway uses PORT env variable)
+# Port for webhook
 PORT = int(os.environ.get("PORT", 8080))
 
 # Dictionary to store user language preferences
@@ -53,6 +50,16 @@ LANGUAGES = {
     'ig': 'Igbo'
 }
 
+# Try to import googletrans, fallback to simple translation if not available
+try:
+    from googletrans import Translator
+    translator = Translator()
+    HAS_TRANSLATOR = True
+    logger.info("Google Translator loaded successfully")
+except ImportError:
+    HAS_TRANSLATOR = False
+    logger.warning("Google Translator not available. Using fallback mode.")
+
 # ============ COMMAND HANDLERS ============
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -60,22 +67,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     keyboard = [
         [InlineKeyboardButton("🌐 Set Language", callback_data="set_language")],
-        [InlineKeyboardButton("ℹ️ Help", callback_data="help")]
+        [InlineKeyboardButton("ℹ️ Help", callback_data="help")],
+        [InlineKeyboardButton("📋 Supported Languages", callback_data="show_langs")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        f"👋 Hello {user.first_name}!\n\n"
-        f"I'm a translation bot. Send me any text and I'll translate it for you!\n\n"
-        f"📝 **Commands:**\n"
+        f"👋 *Hello {user.first_name}!*\n\n"
+        f"🌍 Welcome to *Universal Translator Bot*!\n\n"
+        f"📝 Send me any text and I'll translate it for you.\n\n"
+        f"🔹 *Default language:* English\n"
+        f"🔹 Use the buttons below to get started\n\n"
+        f"⚡ *Quick Commands:*\n"
         f"/start - Show this menu\n"
         f"/help - Get help\n"
-        f"/languages - List supported languages\n"
-        f"/setlang - Set your preferred language\n"
-        f"/translate <text> - Translate specific text\n"
-        f"/about - About this bot\n\n"
-        f"🌍 Default translation: English\n"
-        f"Use the button below to set your language!",
+        f"/setlang - Set your language\n"
+        f"/translate <text> - Translate text\n"
+        f"/languages - List all languages",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -83,55 +91,60 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a help message."""
     await update.message.reply_text(
-        "🤖 **How to use this bot:**\n\n"
+        "🤖 *How to use this bot:*\n\n"
         "1️⃣ Send me any text message\n"
-        "2️⃣ I'll auto-detect and translate to your preferred language\n"
+        "2️⃣ I'll translate it to your preferred language\n"
         "3️⃣ Use /setlang to change your target language\n"
         "4️⃣ Use /translate <text> for specific translations\n\n"
-        "🌐 **Supported Languages:** 20+ languages\n"
-        "📌 **Default:** English\n\n"
-        "🔧 **Commands:**\n"
+        "📌 *Commands:*\n"
         "/start - Main menu\n"
-        "/help - This help message\n"
-        "/languages - List all supported languages\n"
-        "/setlang - Change your translation target language\n"
-        "/translate <text> - Translate specific text\n"
-        "/about - About this bot",
+        "/help - This help\n"
+        "/languages - List all languages\n"
+        "/setlang - Change language\n"
+        "/translate <text> - Translate text\n"
+        "/about - About this bot\n\n"
+        "🌐 *Supported Languages:* 20+ languages",
         parse_mode='Markdown'
     )
 
 async def about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send about information."""
     await update.message.reply_text(
-        "🌍 **Translation Bot v2.0**\n\n"
-        "Built with:\n"
-        "🤖 python-telegram-bot v21.1.1\n"
-        "🌐 googletrans v4.0.0\n"
-        "🚀 Deployed on Railway\n\n"
-        "Features:\n"
-        "✅ Auto-detect source language\n"
-        "✅ Translate to 20+ languages\n"
-        "✅ Language preferences saved per user\n"
-        "✅ Fast and reliable\n\n"
-        "📌 **Note:** Free Google Translate API - may have limits",
+        "🌍 *Universal Translator Bot*\n"
+        "Version 2.0\n\n"
+        "🤖 Built with:\n"
+        "• python-telegram-bot\n"
+        "• Google Translate API\n"
+        "• Deployed on Railway\n\n"
+        "✨ Features:\n"
+        "✅ Auto language detection\n"
+        "✅ 20+ languages supported\n"
+        "✅ User preferences saved\n"
+        "✅ Fast & reliable\n\n"
+        "📌 Made with ❤️ for everyone",
         parse_mode='Markdown'
     )
 
 async def show_languages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show all supported languages."""
-    lang_list = "\n".join([f"• {code}: {name}" for code, name in LANGUAGES.items()])
+    lang_list = []
+    for code, name in LANGUAGES.items():
+        lang_list.append(f"• `{code}` - {name}")
     
-    # Paginate if too long (Telegram has message limits)
-    if len(lang_list) > 4000:
-        chunks = [lang_list[i:i+4000] for i in range(0, len(lang_list), 4000)]
+    lang_text = "\n".join(lang_list)
+    
+    # Split if too long
+    if len(lang_text) > 4000:
+        chunks = [lang_text[i:i+4000] for i in range(0, len(lang_text), 4000)]
         for chunk in chunks:
             await update.message.reply_text(
-                f"🌐 **Supported Languages:**\n\n{chunk}",
+                f"🌐 *Supported Languages:*\n\n{chunk}",
                 parse_mode='Markdown'
             )
     else:
         await update.message.reply_text(
-            f"🌐 **Supported Languages:**\n\n{lang_list}",
+            f"🌐 *Supported Languages:*\n\n{lang_text}\n\n"
+            f"Use /setlang to choose your preferred language.",
             parse_mode='Markdown'
         )
 
@@ -139,7 +152,9 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Set user's preferred target language."""
     keyboard = []
     row = []
-    for code, name in list(LANGUAGES.items())[:10]:  # Show first 10 for clean display
+    
+    # Create buttons for first 10 languages
+    for code, name in list(LANGUAGES.items())[:10]:
         row.append(InlineKeyboardButton(name, callback_data=f"lang_{code}"))
         if len(row) == 2:
             keyboard.append(row)
@@ -147,14 +162,15 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if row:
         keyboard.append(row)
     
-    # Add option to see more languages
+    # Add more options
     keyboard.append([InlineKeyboardButton("📋 Show All Languages", callback_data="show_all_langs")])
+    keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "🌍 **Choose your preferred translation language:**\n\n"
+        "🌍 *Choose your preferred language:*\n\n"
         "Your messages will be translated to this language.\n"
-        "Select from the options below 👇",
+        "Select from the buttons below 👇",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -163,8 +179,15 @@ async def translate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     """Translate a specific text."""
     if not context.args:
         await update.message.reply_text(
-            "❌ **Usage:** /translate <text to translate>\n\n"
-            "Example: /translate Hello, how are you?",
+            "❌ *Usage:* /translate <text to translate>\n\n"
+            "Example: `/translate Hello, how are you?`",
+            parse_mode='Markdown'
+        )
+        return
+    
+    if not HAS_TRANSLATOR:
+        await update.message.reply_text(
+            "❌ Translation service is currently unavailable. Please try again later.",
             parse_mode='Markdown'
         )
         return
@@ -176,9 +199,9 @@ async def translate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     try:
         result = translator.translate(text, dest=target_lang)
         await update.message.reply_text(
-            f"🌐 **Translation to {LANGUAGES.get(target_lang, 'English')}:**\n\n"
+            f"🌐 *Translation:*\n\n"
             f"📝 {result.text}\n\n"
-            f"ℹ️ Detected: {LANGUAGES.get(result.src, result.src)}",
+            f"ℹ️ From: {LANGUAGES.get(result.src, result.src)} → To: {LANGUAGES.get(target_lang, target_lang)}",
             parse_mode='Markdown'
         )
     except Exception as e:
@@ -214,25 +237,50 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
-            "🌍 **Choose your preferred translation language:**",
+            "🌍 *Choose your preferred translation language:*",
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
         
     elif data == "help":
         await query.edit_message_text(
-            "🤖 **How to use this bot:**\n\n"
+            "🤖 *How to use this bot:*\n\n"
             "1️⃣ Send any text\n"
-            "2️⃣ I'll translate it to your preferred language\n"
-            "3️⃣ Use /setlang to change target language\n\n"
-            "📝 **Commands:**\n"
+            "2️⃣ I'll translate it for you\n"
+            "3️⃣ Use /setlang to change language\n\n"
+            "📝 *Commands:*\n"
             "/start - Main menu\n"
             "/help - Help\n"
-            "/languages - Supported languages\n"
+            "/languages - Languages\n"
             "/setlang - Change language\n"
-            "/translate <text> - Translate specific text\n"
-            "/about - About",
+            "/translate - Translate text\n"
+            "/about - About\n\n"
+            "🔙 Click back to return to menu",
             reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")]
+            ]),
+            parse_mode='Markdown'
+        )
+        
+    elif data == "show_langs":
+        lang_list = "\n".join([f"• {code}: {name}" for code, name in LANGUAGES.items()])
+        await query.edit_message_text(
+            f"🌐 *All Supported Languages:*\n\n{lang_list}\n\n"
+            f"Use /setlang to choose one!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🌐 Set Language", callback_data="set_language")],
+                [InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")]
+            ]),
+            parse_mode='Markdown'
+        )
+        
+    elif data == "show_all_langs":
+        lang_list = "\n".join([f"• {code}: {name}" for code, name in LANGUAGES.items()])
+        await query.edit_message_text(
+            f"🌐 *All Supported Languages:*\n\n{lang_list}\n\n"
+            f"Select a language from the menu:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🌐 Set Language", callback_data="set_language")],
                 [InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")]
             ]),
             parse_mode='Markdown'
@@ -241,24 +289,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     elif data == "back_to_menu":
         keyboard = [
             [InlineKeyboardButton("🌐 Set Language", callback_data="set_language")],
-            [InlineKeyboardButton("ℹ️ Help", callback_data="help")]
+            [InlineKeyboardButton("ℹ️ Help", callback_data="help")],
+            [InlineKeyboardButton("📋 Languages", callback_data="show_langs")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
-            "👋 **Main Menu**\n\nChoose an option:",
+            "👋 *Main Menu*\n\nChoose an option:",
             reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-        
-    elif data == "show_all_langs":
-        lang_list = "\n".join([f"• {code}: {name}" for code, name in LANGUAGES.items()])
-        await query.edit_message_text(
-            f"🌐 **All Supported Languages:**\n\n{lang_list}\n\n"
-            f"To set a language, use /setlang or click the button below:",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🌐 Set Language", callback_data="set_language")],
-                [InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")]
-            ]),
             parse_mode='Markdown'
         )
         
@@ -267,9 +304,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if lang_code in LANGUAGES:
             user_languages[user_id] = lang_code
             await query.edit_message_text(
-                f"✅ **Language set to {LANGUAGES[lang_code]}!**\n\n"
+                f"✅ *Language set to {LANGUAGES[lang_code]}!*\n\n"
                 f"All future messages will be translated to {LANGUAGES[lang_code]}.\n\n"
-                f"Try sending me a message!",
+                f"Send me a message to try it out! 🚀",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]
                 ]),
@@ -288,7 +325,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle incoming messages and translate them."""
-    if not update.message.text:
+    if not update.message or not update.message.text:
         return
     
     # Don't translate commands
@@ -297,31 +334,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     text = update.message.text
     user_id = str(update.effective_user.id)
-    target_lang = user_languages.get(user_id, 'en')  # Default to English
+    target_lang = user_languages.get(user_id, 'en')
+    
+    # If translator is not available, send a message
+    if not HAS_TRANSLATOR:
+        await update.message.reply_text(
+            f"ℹ️ Translation service unavailable.\n"
+            f"Your message: {text}\n\n"
+            f"Please try again later.",
+            parse_mode='Markdown'
+        )
+        return
     
     try:
-        # Try to detect and translate
+        # Translate the message
         result = translator.translate(text, dest=target_lang)
         
-        # Only send translation if language is different or translation is different
-        if result.src != target_lang or result.text != text:
+        # Only send translation if it's different
+        if result.src != target_lang or result.text.lower() != text.lower():
             await update.message.reply_text(
-                f"🌐 **Translation ({LANGUAGES.get(result.src, result.src)} → {LANGUAGES.get(target_lang, target_lang)}):**\n\n"
-                f"{result.text}",
+                f"🌐 *Translation*\n"
+                f"({LANGUAGES.get(result.src, result.src)} → {LANGUAGES.get(target_lang, target_lang)}):\n\n"
+                f"📝 {result.text}",
                 parse_mode='Markdown'
             )
         else:
-            # If source and target are same, just show detected language
+            # Same language, just show detection
             await update.message.reply_text(
-                f"ℹ️ Detected language: {LANGUAGES.get(result.src, result.src)}\n"
-                f"Your target language is the same, no translation needed.",
+                f"ℹ️ *Language Detected:* {LANGUAGES.get(result.src, result.src)}\n"
+                f"Your target language is the same, no translation needed.\n\n"
+                f"Use /setlang to change your target language.",
                 parse_mode='Markdown'
             )
             
     except Exception as e:
         logger.error(f"Translation error: {e}")
         await update.message.reply_text(
-            "❌ Could not translate. Please try again later.",
+            "❌ Translation failed. Please try again later.\n"
+            "If this continues, check if the service is available.",
             parse_mode='Markdown'
         )
 
@@ -331,14 +381,26 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Log errors and notify user."""
     logger.error(f"Update {update} caused error {context.error}")
     
-    if update and update.effective_user:
-        try:
+    try:
+        if update and update.effective_user:
             await context.bot.send_message(
                 chat_id=update.effective_user.id,
                 text="❌ An error occurred. Please try again later."
             )
-        except:
-            pass
+    except:
+        pass
+
+# ============ WEBHOOK SETUP ============
+
+async def setup_webhook(application):
+    """Setup webhook for Railway deployment."""
+    app_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+    if app_url:
+        webhook_url = f"https://{app_url}/webhook"
+        logger.info(f"Setting webhook to: {webhook_url}")
+        await application.bot.set_webhook(url=webhook_url)
+        return True
+    return False
 
 # ============ MAIN FUNCTION ============
 
@@ -364,27 +426,23 @@ def main() -> None:
     # Register error handler
     application.add_error_handler(error_handler)
 
-    # Determine if running on Railway (webhook) or local (polling)
-    is_railway = os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_ID")
+    # Check if running on Railway
+    is_railway = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_ID") or os.environ.get("RAILWAY_PUBLIC_DOMAIN"))
     
     if is_railway:
-        # Webhook mode for Railway
-        app_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
-        if not app_url:
-            logger.warning("RAILWAY_PUBLIC_DOMAIN not set, falling back to polling")
-            application.run_polling()
-        else:
-            webhook_url = f"https://{app_url}/webhook"
-            logger.info(f"Starting webhook on port {PORT}")
-            application.run_webhook(
-                listen="0.0.0.0",
-                port=PORT,
-                url_path=TOKEN,
-                webhook_url=webhook_url
-            )
+        # Railway deployment - use webhook
+        logger.info(f"🚀 Starting bot in WEBHOOK mode on port {PORT}")
+        
+        # Run with webhook
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=TOKEN,
+            webhook_url=f"https://{os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')}/webhook" if os.environ.get("RAILWAY_PUBLIC_DOMAIN") else None
+        )
     else:
-        # Polling mode for local development
-        logger.info("Starting bot in polling mode...")
+        # Local development - use polling
+        logger.info("🚀 Starting bot in POLLING mode...")
         application.run_polling()
 
 if __name__ == "__main__":
